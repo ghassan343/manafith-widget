@@ -1,8 +1,7 @@
-(async function () { // 👈 تم إضافة async هنا لإصلاح مشكلة الـ await
+(async function () {
   const SUPABASE_URL = "https://urylxruaoctpmsdeyuwc.supabase.co";
   const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyeWx4cnVhb2N0cG1zZGV5dXdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDU2MjIsImV4cCI6MjA5NDYyMTYyMn0.8rzQVy5L6tdhnoxqzYomymW5oGbiLNFmUWrH3MKSI_Y";
   
-  // 🔴 التعديل هنا فقط: تم تغيير المفتاح الافتراضي ليقوم بتشغيل بوت "تيست" الجديد
   const COMPANY_KEY = document.currentScript?.dataset?.key || "mnf_default_key_2024";
   // ── State ──
   const visitorKey = localStorage.getItem("mnf_vkey") || "v_" + Date.now() + "_" + Math.random().toString(36).slice(2,7);
@@ -32,23 +31,24 @@
 
   // ── Init: get company, visitor, conversation ──
   async function init() {
-    // سيقوم بجلب معرف شركة تيست تلقائياً بناءً على المفتاح الجديد
-   const bs = await api(`/bot_settings?company_id=eq.${companyId}&select=active,bot_name,bot_avatar`);
-if (bs && bs.length) {
-  botEnabled = bs[0].active;
-  // تحديث اسم وأيقونة البوت
-  const nameEl = document.querySelector(".mnf-hname");
-  const avEl = document.querySelector(".mnf-av");
-  if(nameEl && bs[0].bot_name) nameEl.textContent = bs[0].bot_name;
-  if(avEl && bs[0].bot_avatar) avEl.textContent = bs[0].bot_avatar;
-}
-    // 💡 تم نقل الأسطر التالية إلى داخل دالة init() لضمان تسلسل العمليات البرمجية بشكل صحيح
-    
-    // جلب إعدادات البوت والويب هوك الخاص بشركة تيست
-    const bs = await api(`/bot_settings?company_id=eq.${companyId}&select=active`);
-    if (bs && bs.length) botEnabled = bs[0].active;
+    // 1. أولاً: جلب معرف الشركة بناءً على الـ KEY
+    const companies = await api(`/companies?api_key=eq.${COMPANY_KEY}&select=id`);
+    if (!companies || !companies.length) return;
+    companyId = companies[0].id;
 
-    // تسجيل الزائر تحت حساب شركة تيست
+    // 2. ثانياً: جلب إعدادات البوت (الحالة، الاسم، والأفاتار) في طلب واحد سليم
+    const bs = await api(`/bot_settings?company_id=eq.${companyId}&select=active,bot_name,bot_avatar`);
+    if (bs && bs.length) {
+      botEnabled = bs[0].active;
+      
+      // تحديث واجهة المستخدم بالاسم والأيقونة القادمة من السيرفر
+      const nameEl = document.querySelector(".mnf-hname");
+      const avEl = document.querySelector(".mnf-av");
+      if (nameEl && bs[0].bot_name) nameEl.textContent = bs[0].bot_name;
+      if (avEl && bs[0].bot_avatar) avEl.textContent = bs[0].bot_avatar;
+    }
+
+    // 3. ثالثاً: تسجيل الزائر تحت حساب الشركة
     const vis = await api("/visitors?select=id&company_id=eq." + companyId + "&visitor_key=eq." + visitorKey);
     if (vis && vis.length) {
       visitorId = vis[0].id;
@@ -62,7 +62,7 @@ if (bs && bs.length) {
       if (newVis && newVis.length) visitorId = newVis[0].id;
     }
 
-    // فتح محادثة جديدة تابعة لشركة تيست
+    // 4. رابعاً: فتح أو جلب محادثة جديدة تابعة للشركة
     const convs = await api(`/conversations?visitor_id=eq.${visitorId}&status=eq.open&order=created_at.desc&limit=1&select=id,bot_enabled`);
     if (convs && convs.length) {
       convId = convs[0].id;
@@ -77,7 +77,7 @@ if (bs && bs.length) {
       if (newConv && newConv.length) convId = newConv[0].id;
     }
 
-    // تحميل الرسائل السابقة الخاصة بهذه المحادثة
+    // 5. خامساً: تحميل الرسائل السابقة الخاصة بهذه المحادثة
     if (convId) {
       const prevMsgs = await api(`/messages?conversation_id=eq.${convId}&order=created_at.asc&select=*`);
       if (prevMsgs && prevMsgs.length) {
@@ -120,7 +120,6 @@ if (bs && bs.length) {
     const t = fmtTime(new Date().toISOString());
     appendMsg("user", text, t);
 
-    // حفظ الرسالة في جدول الرسائل
     await api("/messages", "POST", {
       conversation_id: convId,
       sender_type: "visitor",
@@ -137,7 +136,6 @@ if (bs && bs.length) {
     if (isBotOn) {
       setTyping(true);
       try {
-        // الودجت سيجلب رابط الويب هوك الخاص بشركة تيست تلقائياً من الـ DB ليرسل له الرسالة
         const bsData = await api(`/bot_settings?company_id=eq.${companyId}&select=webhook_url`);
         const webhook = bsData && bsData.length ? bsData[0].webhook_url : null;
         if (webhook) {
@@ -318,6 +316,5 @@ if (bs && bs.length) {
   function fmtTime(iso) { return new Date(iso).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" }); }
   function esc(t) { return String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>"); }
 
-  // ── استدعاء دالة التشغيل تلقائياً ──
   await init();
 })();
