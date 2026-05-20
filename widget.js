@@ -1,9 +1,9 @@
-(function () {
+(async function () { // 👈 تم إضافة async هنا لإصلاح مشكلة الـ await
   const SUPABASE_URL = "https://urylxruaoctpmsdeyuwc.supabase.co";
   const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyeWx4cnVhb2N0cG1zZGV5dXdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDU2MjIsImV4cCI6MjA5NDYyMTYyMn0.8rzQVy5L6tdhnoxqzYomymW5oGbiLNFmUWrH3MKSI_Y";
   
   // 🔴 التعديل هنا فقط: تم تغيير المفتاح الافتراضي ليقوم بتشغيل بوت "تيست" الجديد
-    const COMPANY_KEY = document.currentScript?.dataset?.key || "mnf_default_key_2024";
+  const COMPANY_KEY = document.currentScript?.dataset?.key || "mnf_default_key_2024";
   // ── State ──
   const visitorKey = localStorage.getItem("mnf_vkey") || "v_" + Date.now() + "_" + Math.random().toString(36).slice(2,7);
   localStorage.setItem("mnf_vkey", visitorKey);
@@ -33,11 +33,12 @@
   // ── Init: get company, visitor, conversation ──
   async function init() {
     // سيقوم بجلب معرف شركة تيست تلقائياً بناءً على المفتاح الجديد
-      const companies = await api(`/companies?api_key=eq.${COMPANY_KEY}&select=id`);
- if (!companies || !companies.length) return;
- companyId = companies[0].id;
-      }
+    const companies = await api(`/companies?api_key=eq.${COMPANY_KEY}&select=id`);
+    if (!companies || !companies.length) return;
+    companyId = companies[0].id;
 
+    // 💡 تم نقل الأسطر التالية إلى داخل دالة init() لضمان تسلسل العمليات البرمجية بشكل صحيح
+    
     // جلب إعدادات البوت والويب هوك الخاص بشركة تيست
     const bs = await api(`/bot_settings?company_id=eq.${companyId}&select=active`);
     if (bs && bs.length) botEnabled = bs[0].active;
@@ -312,5 +313,6 @@
   function fmtTime(iso) { return new Date(iso).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" }); }
   function esc(t) { return String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>"); }
 
-  init();
+  // ── استدعاء دالة التشغيل تلقائياً ──
+  await init();
 })();
