@@ -3,8 +3,7 @@
   const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyeWx4cnVhb2N0cG1zZGV5dXdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDU2MjIsImV4cCI6MjA5NDYyMTYyMn0.8rzQVy5L6tdhnoxqzYomymW5oGbiLNFmUWrH3MKSI_Y";
   
   // 🔴 التعديل هنا فقط: تم تغيير المفتاح الافتراضي ليقوم بتشغيل بوت "تيست" الجديد
-  const COMPANY_KEY  = "test_api_key_2026";
-
+    const COMPANY_KEY = document.currentScript?.dataset?.key || "mnf_default_key_2024";
   // ── State ──
   const visitorKey = localStorage.getItem("mnf_vkey") || "v_" + Date.now() + "_" + Math.random().toString(36).slice(2,7);
   localStorage.setItem("mnf_vkey", visitorKey);
