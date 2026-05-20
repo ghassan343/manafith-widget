@@ -33,10 +33,15 @@
   // ── Init: get company, visitor, conversation ──
   async function init() {
     // سيقوم بجلب معرف شركة تيست تلقائياً بناءً على المفتاح الجديد
-    const companies = await api(`/companies?api_key=eq.${COMPANY_KEY}&select=id`);
-    if (!companies || !companies.length) return;
-    companyId = companies[0].id;
-
+   const bs = await api(`/bot_settings?company_id=eq.${companyId}&select=active,bot_name,bot_avatar`);
+if (bs && bs.length) {
+  botEnabled = bs[0].active;
+  // تحديث اسم وأيقونة البوت
+  const nameEl = document.querySelector(".mnf-hname");
+  const avEl = document.querySelector(".mnf-av");
+  if(nameEl && bs[0].bot_name) nameEl.textContent = bs[0].bot_name;
+  if(avEl && bs[0].bot_avatar) avEl.textContent = bs[0].bot_avatar;
+}
     // 💡 تم نقل الأسطر التالية إلى داخل دالة init() لضمان تسلسل العمليات البرمجية بشكل صحيح
     
     // جلب إعدادات البوت والويب هوك الخاص بشركة تيست
