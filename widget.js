@@ -5,8 +5,7 @@
   const COMPANY_KEY = document.currentScript?.dataset?.key || "mnf_default_key_2024";
 
   // ── State ──
-  const visitorKey = localStorage.getItem("mnf_vkey") || "v_" + Date.now() + "_" + Math.random().toString(36).slice(2,7);
-  localStorage.setItem("mnf_vkey", visitorKey);
+  const visitorKey = "v_" + Date.now() + "_" + Math.random().toString(36).slice(2,7);
   let convId     = null;
   let companyId  = null;
   let visitorId  = null;
@@ -85,6 +84,10 @@
     if (convId) {
       const prevMsgs = await api(`/messages?conversation_id=eq.${convId}&order=created_at.asc&select=*`);
       if (prevMsgs && prevMsgs.length) {
+        // إخفاء رسالة الترحيب الافتراضية لأن في محادثة موجودة
+        const welcomeEl = document.querySelector("#mnf-msgs .mnf-msg.bot:first-child");
+        if (welcomeEl) welcomeEl.remove();
+
         prevMsgs.forEach(m => {
           if (m.message && m.message.includes("[TRANSFER]")) return;
           appendMsg(m.sender_type !== "visitor" ? "bot" : "user", m.message, fmtTime(m.created_at), false);
