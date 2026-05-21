@@ -1,15 +1,21 @@
 (async function () {
   const SUPABASE_URL = "https://urylxruaoctpmsdeyuwc.supabase.co";
   const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVyeWx4cnVhb2N0cG1zZGV5dXdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDU2MjIsImV4cCI6MjA5NDYyMTYyMn0.8rzQVy5L6tdhnoxqzYomymW5oGbiLNFmUWrH3MKSI_Y";
-  
+
   const COMPANY_KEY = document.currentScript?.dataset?.key || "mnf_default_key_2024";
+
   // ── State ──
   const visitorKey = localStorage.getItem("mnf_vkey") || "v_" + Date.now() + "_" + Math.random().toString(36).slice(2,7);
   localStorage.setItem("mnf_vkey", visitorKey);
-  let convId = null;
-  let companyId = null;
-  let visitorId = null;
+  let convId     = null;
+  let companyId  = null;
+  let visitorId  = null;
   let botEnabled = true;
+
+  // ── Transfer Timer State ──
+  let transferTimer     = null;
+  let transferCountdown = 0;
+  let inTransfer        = false;
 
   // ── API Helper ──
   async function api(path, method = "GET", body = null) {
@@ -29,26 +35,24 @@
     return text ? JSON.parse(text) : null;
   }
 
-  // ── Init: get company, visitor, conversation ──
+  // ── Init ──
   async function init() {
-    // 1. أولاً: جلب معرف الشركة بناءً على الـ KEY
+    // 1. جلب معرف الشركة
     const companies = await api(`/companies?api_key=eq.${COMPANY_KEY}&select=id`);
     if (!companies || !companies.length) return;
     companyId = companies[0].id;
 
-    // 2. ثانياً: جلب إعدادات البوت (الحالة، الاسم، والأفاتار) في طلب واحد سليم
+    // 2. جلب إعدادات البوت (الحالة، الاسم، الأفاتار)
     const bs = await api(`/bot_settings?company_id=eq.${companyId}&select=active,bot_name,bot_avatar`);
     if (bs && bs.length) {
       botEnabled = bs[0].active;
-      
-      // تحديث واجهة المستخدم بالاسم والأيقونة القادمة من السيرفر
       const nameEl = document.querySelector(".mnf-hname");
-      const avEl = document.querySelector(".mnf-av");
-      if (nameEl && bs[0].bot_name) nameEl.textContent = bs[0].bot_name;
-      if (avEl && bs[0].bot_avatar) avEl.textContent = bs[0].bot_avatar;
+      const avEl   = document.querySelector(".mnf-av");
+      if (nameEl && bs[0].bot_name)   nameEl.textContent = bs[0].bot_name;
+      if (avEl   && bs[0].bot_avatar) avEl.textContent   = bs[0].bot_avatar;
     }
 
-    // 3. ثالثاً: تسجيل الزائر تحت حساب الشركة
+    // 3. تسجيل الزائر
     const vis = await api("/visitors?select=id&company_id=eq." + companyId + "&visitor_key=eq." + visitorKey);
     if (vis && vis.length) {
       visitorId = vis[0].id;
@@ -62,10 +66,10 @@
       if (newVis && newVis.length) visitorId = newVis[0].id;
     }
 
-    // 4. رابعاً: فتح أو جلب محادثة جديدة تابعة للشركة
+    // 4. فتح أو جلب محادثة
     const convs = await api(`/conversations?visitor_id=eq.${visitorId}&status=eq.open&order=created_at.desc&limit=1&select=id,bot_enabled`);
     if (convs && convs.length) {
-      convId = convs[0].id;
+      convId     = convs[0].id;
       botEnabled = convs[0].bot_enabled;
     } else {
       const newConv = await api("/conversations", "POST", {
@@ -77,16 +81,13 @@
       if (newConv && newConv.length) convId = newConv[0].id;
     }
 
-    // 5. خامساً: تحميل الرسائل السابقة الخاصة بهذه المحادثة
+    // 5. تحميل الرسائل السابقة — تخطي رسائل [TRANSFER]
     if (convId) {
       const prevMsgs = await api(`/messages?conversation_id=eq.${convId}&order=created_at.asc&select=*`);
       if (prevMsgs && prevMsgs.length) {
         prevMsgs.forEach(m => {
-          if (m.sender_type !== "visitor") {
-            appendMsg("bot", m.message, fmtTime(m.created_at), false);
-          } else {
-            appendMsg("user", m.message, fmtTime(m.created_at), false);
-          }
+          if (m.message && m.message.includes("[TRANSFER]")) return;
+          appendMsg(m.sender_type !== "visitor" ? "bot" : "user", m.message, fmtTime(m.created_at), false);
         });
       }
       subscribeRealtime();
@@ -107,6 +108,18 @@
         const msg = data.payload.record;
         if (msg.sender_type !== "visitor") {
           setTyping(false);
+
+          // ── اكتشاف [TRANSFER] → شغّل التايمر ──
+          if (msg.message && msg.message.includes("[TRANSFER]")) {
+            startTransferTimer();
+            return;
+          }
+
+          // ── رد من موظف أثناء التايمر → أوقف التايمر ──
+          if (inTransfer && msg.sender_type === "agent") {
+            cancelTransferTimer(false);
+          }
+
           appendMsg("bot", msg.message, fmtTime(msg.created_at));
         }
       }
@@ -114,11 +127,89 @@
     ws.onclose = () => setTimeout(subscribeRealtime, 3000);
   }
 
+  // ══════════════════════════════════════════
+  // ── Transfer Timer
+  // ══════════════════════════════════════════
+  function startTransferTimer() {
+    if (inTransfer) return;
+    inTransfer        = true;
+    transferCountdown = 30;
+    renderTransferBar(30);
+
+    transferTimer = setInterval(() => {
+      transferCountdown--;
+      renderTransferBar(transferCountdown);
+      if (transferCountdown <= 0) {
+        cancelTransferTimer(true); // انتهى الوقت → ارجع للبوت
+      }
+    }, 1000);
+  }
+
+  function cancelTransferTimer(returnToBot) {
+    if (transferTimer) { clearInterval(transferTimer); transferTimer = null; }
+    inTransfer = false;
+    const bar = document.getElementById("mnf-tbar");
+    if (bar) bar.remove();
+
+    if (returnToBot) {
+      api(`/conversations?id=eq.${convId}`, "PATCH", {
+        bot_enabled: true,
+        updated_at: new Date().toISOString()
+      });
+      botEnabled = true;
+      appendMsg("bot", "سيتم الرد عليك من مساعدنا الذكي الآن. 🤖", fmtTime(new Date().toISOString()));
+    }
+  }
+
+  function renderTransferBar(sec) {
+    let bar = document.getElementById("mnf-tbar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "mnf-tbar";
+      bar.style.cssText = "padding:0 13px 8px;flex-shrink:0;";
+      const foot = document.querySelector(".mnf-foot");
+      foot.parentNode.insertBefore(bar, foot);
+    }
+    const pct   = Math.round((sec / 30) * 100);
+    const color = sec > 20 ? "#4ade80" : sec > 10 ? "#fbbf24" : "#f87171";
+    bar.innerHTML = `
+      <div style="
+        background:rgba(255,255,255,0.04);
+        border:1px solid rgba(255,255,255,0.09);
+        border-radius:12px;
+        padding:10px 14px;
+      ">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:7px;">
+            <span style="font-size:14px;">👤</span>
+            <span style="font-size:12px;color:#cbd5e1;font-family:'IBM Plex Sans Arabic',sans-serif;">
+              جاري تحويلك لموظف بشري
+            </span>
+          </div>
+          <span style="
+            font-size:15px;font-weight:700;
+            color:${color};
+            font-family:'IBM Plex Sans Arabic',sans-serif;
+            min-width:28px;text-align:center;
+            transition:color 0.4s;
+          ">${sec}s</span>
+        </div>
+        <div style="width:100%;height:5px;background:rgba(255,255,255,0.07);border-radius:99px;overflow:hidden;">
+          <div style="
+            height:100%;width:${pct}%;
+            background:${color};
+            border-radius:99px;
+            transition:width 0.85s linear, background 0.5s;
+          "></div>
+        </div>
+      </div>
+    `;
+  }
+
   // ── Send Message ──
   async function sendMsg(text) {
     if (!convId || !text.trim()) return;
-    const t = fmtTime(new Date().toISOString());
-    appendMsg("user", text, t);
+    appendMsg("user", text, fmtTime(new Date().toISOString()));
 
     await api("/messages", "POST", {
       conversation_id: convId,
@@ -130,21 +221,24 @@
 
     await api(`/conversations?id=eq.${convId}`, "PATCH", { updated_at: new Date().toISOString() });
 
+    // أثناء التايمر → الرسالة وصلت للموظف، لا ترسل للبوت
+    if (inTransfer) return;
+
     const convData = await api(`/conversations?id=eq.${convId}&select=bot_enabled`);
-    const isBotOn = convData && convData.length ? convData[0].bot_enabled : botEnabled;
+    const isBotOn  = convData && convData.length ? convData[0].bot_enabled : botEnabled;
 
     if (isBotOn) {
       setTyping(true);
       try {
-        const bsData = await api(`/bot_settings?company_id=eq.${companyId}&select=webhook_url`);
+        const bsData  = await api(`/bot_settings?company_id=eq.${companyId}&select=webhook_url`);
         const webhook = bsData && bsData.length ? bsData[0].webhook_url : null;
         if (webhook) {
-          const r = await fetch(webhook, {
+          const r     = await fetch(webhook, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ conversationId: convId, message: text, visitorId, timestamp: new Date().toISOString() })
           });
-          const d = await r.json();
+          const d     = await r.json();
           const reply = d.reply || d.message || d.text || d.output || null;
           if (reply) {
             setTyping(false);
@@ -297,7 +391,7 @@
     fab.classList.toggle("open");
     if (panel.classList.contains("open")) { scrollEnd(); inp.focus(); }
   });
-  
+
   sbtn.addEventListener("click", () => { const t = inp.value.trim(); if(t){ inp.value=""; inp.style.height="auto"; sendMsg(t); } });
   inp.addEventListener("keydown", e => { if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); sbtn.click(); } });
   inp.addEventListener("input", () => { inp.style.height="auto"; inp.style.height=Math.min(inp.scrollHeight,90)+"px"; });
