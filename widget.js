@@ -118,6 +118,12 @@
             return;
           }
 
+          // ── صورة من الموظف أو البوت → اعرضها مباشرة ──
+          if (msg.message && msg.message.startsWith("[IMG]")) {
+            appendMsg("bot", msg.message, fmtTime(msg.created_at));
+            return;
+          }
+
           // ── رد من موظف أثناء التايمر → أوقف التايمر ──
           if (inTransfer && msg.sender_type === "agent") {
             cancelTransferTimer(false);
@@ -403,7 +409,20 @@
     const div = document.createElement("div");
     div.className = "mnf-msg " + role;
     if (!anim) div.style.animation = "none";
-    div.innerHTML = `<div class="mnf-bubble">${esc(text)}</div><div class="mnf-time">${time}</div>`;
+    // دعم الصور — [IMG]url
+    if(text && text.startsWith("[IMG]")){
+      const imgUrl = text.replace("[IMG]","");
+      div.innerHTML = `
+        <div class="mnf-bubble" style="padding:6px;">
+          <img src="${imgUrl}" style="max-width:100%;max-height:220px;border-radius:10px;display:block;cursor:pointer;"
+            onclick="window.open('${imgUrl}','_blank')"
+            loading="lazy"
+            onerror="this.style.display='none'"/>
+        </div>
+        <div class="mnf-time">${time}</div>`;
+    } else {
+      div.innerHTML = `<div class="mnf-bubble">${esc(text)}</div><div class="mnf-time">${time}</div>`;
+    }
     msgsEl.insertBefore(div, typing);
     scrollEnd();
   }
