@@ -239,7 +239,7 @@
     if (isBotOn) {
       setTyping(true);
       try {
-        await fetch(`${SUPABASE_URL}/functions/v1/chat-ai`, {
+     await fetch(`${SUPABASE_URL}/functions/v1/smart-processor`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
