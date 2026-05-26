@@ -239,27 +239,19 @@
     if (isBotOn) {
       setTyping(true);
       try {
-        const bsData  = await api(`/bot_settings?company_id=eq.${companyId}&select=webhook_url`);
-        const webhook = bsData && bsData.length ? bsData[0].webhook_url : null;
-        if (webhook) {
-          const r     = await fetch(webhook, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ conversationId: convId, message: text, visitorId, timestamp: new Date().toISOString() })
-          });
-          const d     = await r.json();
-          const reply = d.reply || d.message || d.text || d.output || null;
-          if (reply) {
-            setTyping(false);
-            await api("/messages", "POST", {
-              conversation_id: convId,
-              sender_type: "bot",
-              sender_id: "bot",
-              message: reply,
-              source: "n8n",
-            });
-          }
-        }
+        await fetch(`${SUPABASE_URL}/functions/v1/chat-ai`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + SUPABASE_KEY,
+          },
+          body: JSON.stringify({
+            message: text,
+            conversation_id: convId,
+            company_id: companyId,
+          }),
+        });
+        setTyping(false);
       } catch (_) {
         setTyping(false);
         appendMsg("bot", "عذراً، حدث خطأ في الاتصال.", fmtTime(new Date().toISOString()));
